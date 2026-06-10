@@ -1,6 +1,8 @@
-import { MousePointer, User, Pencil, ImageDown, ImagePlus, X, Eraser, HelpCircle, RotateCcw, Move, ZoomIn } from 'lucide-react';
+import { MousePointer, User, Pencil, ImageDown, ImagePlus, X, Eraser, HelpCircle, RotateCcw, Copy, Check } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { useSceneStore } from '../lib/sceneStore';
+
+const POV_PROMPT = '画面中的红色线条与箭头仅为镜头运动轨迹的示意参考，最终输出的视频中必须完全清除这些标记，采用第一人称FPV视角，进行超高速、电影级的一镜到底拍摄，严格依照图示红色路径运行，不得偏移、跳跃或简化路径。沿途建筑需呈现清晰的结构、合理的轮廓以及强烈的纹理质感。整体画面追求写实风格，运动平滑稳定，速度感十足，空间连续明确，且不出现重复的建筑。特别注意：最终成片里不得残留任何红线或箭头涂鸦。';
 
 type Tool = 'select' | 'character' | 'draw';
 
@@ -112,7 +114,9 @@ function HelpModal({ onClose }: { onClose: () => void }) {
 export default function Toolbar() {
   const [active, setActive] = useState<Tool>('select');
   const [showHelp, setShowHelp] = useState(() => !localStorage.getItem('helpSeen'));
+  const [copied, setCopied] = useState(false);
   const store = useSceneStore();
+  const hasCurves = useSceneStore((s) => s.hasCurves);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const closeHelp = () => {
@@ -124,6 +128,13 @@ export default function Toolbar() {
     setActive(id);
     store.setAddCharacterMode(id === 'character');
     store.setDrawMode(id === 'draw');
+  };
+
+  const handleCopyPov = () => {
+    navigator.clipboard.writeText(POV_PROMPT).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -233,6 +244,20 @@ export default function Toolbar() {
 
         {/* Right: help + export */}
         <div className="flex items-center gap-2">
+          {hasCurves && (
+            <button
+              onClick={handleCopyPov}
+              title="复制 POV 提示词"
+              className={`flex items-center gap-1.5 px-3 h-8 rounded text-xs font-medium transition-all ${
+                copied
+                  ? 'bg-emerald-600 text-white border border-emerald-500'
+                  : 'bg-[#2a1a1a] text-[#ef9090] hover:bg-[#3a1a1a] hover:text-[#ffbbbb] border border-[#4a1a1a]'
+              }`}
+            >
+              {copied ? <Check size={13} /> : <Copy size={13} />}
+              {copied ? '已复制' : '复制 POV 提示词'}
+            </button>
+          )}
           <button
             onClick={() => setShowHelp(true)}
             title="使用说明"

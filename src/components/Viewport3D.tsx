@@ -343,6 +343,7 @@ export default function Viewport3D() {
     isDrawingRef.current = false;
     if (currentCurveRef.current && currentCurveRef.current.points.length > 1) {
       curvesRef.current.push(currentCurveRef.current);
+      useSceneStore.getState().setHasCurves(true);
     }
     currentCurveRef.current = null;
     renderCanvas2D();
