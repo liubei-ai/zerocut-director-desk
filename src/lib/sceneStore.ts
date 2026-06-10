@@ -27,6 +27,7 @@ interface SceneStore {
   selectedId: string | null;
   addCharacterMode: boolean;
   screenshotMode: boolean;
+  backgroundDataUrl: string | null;
 
   addCharacter: (pos: [number, number, number]) => void;
   removeCharacter: (id: string) => void;
@@ -34,6 +35,7 @@ interface SceneStore {
   selectItem: (id: string | null) => void;
   setAddCharacterMode: (v: boolean) => void;
   setScreenshotMode: (v: boolean) => void;
+  setBackgroundImage: (url: string | null) => void;
 }
 
 let charCounter = 0;
@@ -42,6 +44,7 @@ export const useSceneStore = create<SceneStore>((set) => ({
   selectedId: null,
   addCharacterMode: false,
   screenshotMode: false,
+  backgroundDataUrl: null,
   characters: [
     {
       id: 'char-1',
@@ -88,6 +91,7 @@ export const useSceneStore = create<SceneStore>((set) => ({
   selectItem: (id) => set({ selectedId: id }),
   setAddCharacterMode: (v) => set({ addCharacterMode: v }),
   setScreenshotMode: (v) => set({ screenshotMode: v }),
+  setBackgroundImage: (url) => set({ backgroundDataUrl: url }),
 }));
 
 export function getSelectedCharacter(store: SceneStore) {

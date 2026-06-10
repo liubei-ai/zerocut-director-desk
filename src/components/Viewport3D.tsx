@@ -85,22 +85,21 @@ function exportTransparentPng(
   mountEl: HTMLDivElement,
   sel: { x: number; y: number; w: number; h: number }
 ) {
+  const hasBackground = scene.background instanceof THREE.Texture;
   const dpr = Math.min(window.devicePixelRatio, 2);
   const vW = mountEl.clientWidth;
   const vH = mountEl.clientHeight;
 
-  // Off-screen renderer with alpha
-  const off = new THREE.WebGLRenderer({ alpha: true, antialias: true, preserveDrawingBuffer: true });
+  const off = new THREE.WebGLRenderer({ alpha: !hasBackground, antialias: true, preserveDrawingBuffer: true });
   off.setPixelRatio(dpr);
   off.setSize(vW, vH);
   off.toneMapping = THREE.ACESFilmicToneMapping;
   off.toneMappingExposure = 0.9;
-  off.setClearColor(0x000000, 0);
+  if (!hasBackground) off.setClearColor(0x000000, 0);
 
-  // Hide chrome objects (grid, floor, axes) + scene bg/fog
   const savedBg = scene.background;
   const savedFog = scene.fog;
-  scene.background = null;
+  if (!hasBackground) scene.background = null;
   scene.fog = null;
 
   const charRoots = new Set(Array.from(models.values()).map((m) => m.root));
@@ -108,6 +107,7 @@ function exportTransparentPng(
   for (const child of scene.children) {
     if (child instanceof THREE.Light) continue;
     if (charRoots.has(child as THREE.Group)) continue;
+    if (child.userData.nameLabel) continue; // keep name labels in export
     toRestore.push({ obj: child, vis: child.visible });
     child.visible = false;
   }
@@ -309,6 +309,33 @@ export default function Viewport3D() {
     controls.addEventListener('change', syncZoom);
     syncZoom();
 
+    // ── Background image sync ───────────────────────────────────────────────
+    let lastBgUrl: string | null = null;
+    const applyBackground = (url: string | null) => {
+      if (url === lastBgUrl) return;
+      lastBgUrl = url;
+      if (url) {
+        new THREE.TextureLoader().load(url, (texture) => {
+          if (scene.background instanceof THREE.Texture) scene.background.dispose();
+          texture.colorSpace = THREE.SRGBColorSpace;
+          scene.background = texture;
+          scene.fog = null;
+          for (const child of scene.children) {
+            if (child.userData.sceneChrome) child.visible = false;
+          }
+        });
+      } else {
+        if (scene.background instanceof THREE.Texture) scene.background.dispose();
+        scene.background = new THREE.Color(0x08101a);
+        scene.fog = new THREE.FogExp2(0x08101a, 0.016);
+        for (const child of scene.children) {
+          if (child.userData.sceneChrome) child.visible = true;
+        }
+      }
+    };
+    applyBackground(useSceneStore.getState().backgroundDataUrl);
+    const unsubBg = useSceneStore.subscribe((s) => applyBackground(s.backgroundDataUrl));
+
     const floorMesh = new THREE.Mesh(
       new THREE.PlaneGeometry(80, 80),
       new THREE.MeshBasicMaterial({ visible: false, side: THREE.DoubleSide })
@@ -478,6 +505,8 @@ export default function Viewport3D() {
       cancelAnimationFrame(raf);
       unsubscribe();
       unsubScreenshot();
+      unsubBg();
+      if (scene.background instanceof THREE.Texture) scene.background.dispose();
       controls.removeEventListener('change', syncZoom);
       controlsRef.current = null;
       renderer.domElement.removeEventListener('mousedown', onMouseDown);
