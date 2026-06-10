@@ -118,12 +118,17 @@ function HelpModal({ onClose }: { onClose: () => void }) {
 }
 
 export default function Toolbar() {
-  const [active, setActive] = useState<Tool>('select');
   const [showHelp, setShowHelp] = useState(() => !localStorage.getItem('helpSeen'));
   const [copied, setCopied] = useState(false);
   const store = useSceneStore();
   const hasCurves = useSceneStore((s) => s.hasCurves);
+  const addCharacterMode = useSceneStore((s) => s.addCharacterMode);
+  const drawMode = useSceneStore((s) => s.drawMode);
+  const textMode = useSceneStore((s) => s.textMode);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Derive active tool from store — stays in sync with external activations (e.g. ScenePanel)
+  const active: Tool = drawMode ? 'draw' : textMode ? 'text' : addCharacterMode ? 'character' : 'select';
 
   const closeHelp = () => {
     localStorage.setItem('helpSeen', '1');
@@ -131,7 +136,6 @@ export default function Toolbar() {
   };
 
   const handleTool = (id: Tool) => {
-    setActive(id);
     store.setAddCharacterMode(id === 'character');
     store.setDrawMode(id === 'draw');
     store.setTextMode(id === 'text');
@@ -169,7 +173,7 @@ export default function Toolbar() {
               onClick={() => handleTool(tool.id)}
               title={tool.label}
               className={`w-9 h-9 flex items-center justify-center rounded transition-colors ${
-                active === tool.id || (tool.id === 'character' && store.addCharacterMode)
+                active === tool.id
                   ? tool.id === 'draw'
                     ? 'bg-red-600 text-white'
                     : tool.id === 'text'
