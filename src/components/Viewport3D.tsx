@@ -5,6 +5,33 @@ import { useSceneStore, CHARACTER_COLORS, TextAnnotation } from '../lib/sceneSto
 import { createCharacterModel, applyPose, setCharacterColor, CharacterModel } from '../lib/humanoid';
 import { Download, X, ZoomIn, ZoomOut } from 'lucide-react';
 
+// Approximate bounding box of a text annotation (CSS pixels)
+function getAnnotationBBox(ann: TextAnnotation, canvasW: number, canvasH: number) {
+  const tempCtx = document.createElement('canvas').getContext('2d')!;
+  tempCtx.font = `bold ${ann.fontSize}px system-ui, "PingFang SC", "Microsoft YaHei", sans-serif`;
+  const textW = tempCtx.measureText(ann.text).width;
+  const textH = ann.fontSize * 1.3;
+  const pad = 6;
+  return {
+    x: ann.xFrac * canvasW - pad,
+    y: ann.yFrac * canvasH - pad,
+    w: textW + pad * 2,
+    h: textH + pad * 2,
+  };
+}
+
+function hitTestAnnotation(
+  cssX: number, cssY: number,
+  canvasW: number, canvasH: number,
+  annotations: TextAnnotation[]
+): TextAnnotation | null {
+  for (const ann of annotations) {
+    const { x, y, w, h } = getAnnotationBBox(ann, canvasW, canvasH);
+    if (cssX >= x && cssX <= x + w && cssY >= y && cssY <= y + h) return ann;
+  }
+  return null;
+}
+
 const DEG = Math.PI / 180;
 
 // ─── scene builder ────────────────────────────────────────────────────────────
@@ -218,7 +245,7 @@ function hexToRgb(hex: string): string {
   return `${r},${g},${b}`;
 }
 
-function drawTextAnnotations(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, annotations: TextAnnotation[]) {
+function drawTextAnnotations(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, annotations: TextAnnotation[], selectedId: string | null) {
   for (const ann of annotations) {
     const x = ann.xFrac * canvas.offsetWidth;
     const y = ann.yFrac * canvas.offsetHeight;
@@ -230,8 +257,8 @@ function drawTextAnnotations(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasEl
     const textH = ann.fontSize * 1.3;
     const pad = 6;
     ctx.fillStyle = `rgba(${hexToRgb(ann.bgColor)},${ann.bgAlpha})`;
-    const rx = 4;
     const bx = x - pad, by = y - pad, bw = textW + pad * 2, bh = textH + pad * 2;
+    const rx = 4;
     ctx.beginPath();
     ctx.moveTo(bx + rx, by);
     ctx.lineTo(bx + bw - rx, by);
@@ -246,6 +273,13 @@ function drawTextAnnotations(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasEl
     ctx.fill();
     ctx.fillStyle = ann.color;
     ctx.fillText(ann.text, x, y);
+    // Selection highlight
+    if (ann.id === selectedId) {
+      ctx.strokeStyle = 'rgba(251, 191, 36, 0.9)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5, 3]);
+      ctx.strokeRect(bx - 2, by - 2, bw + 4, bh + 4);
+    }
     ctx.restore();
   }
 }
@@ -276,6 +310,7 @@ export default function Viewport3D() {
   const clearCurvesSignal = useSceneStore((s) => s.clearCurvesSignal);
   const textMode = useSceneStore((s) => s.textMode);
   const textAnnotations = useSceneStore((s) => s.textAnnotations);
+  const selectedTextId = useSceneStore((s) => s.selectedTextId);
   const removeTextAnnotation = useSceneStore((s) => s.removeTextAnnotation);
 
   // Pending text input state
@@ -298,10 +333,10 @@ export default function Viewport3D() {
     }
   }, [screenshotMode]);
 
-  // Re-render canvas when text annotations change
+  // Re-render canvas when text annotations or selection changes
   useEffect(() => {
     renderCanvas2DRef.current();
-  }, [textAnnotations]);
+  }, [textAnnotations, selectedTextId]);
 
   // ── Overlay mouse handlers ──────────────────────────────────────────────────
   const onOverlayMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
@@ -366,7 +401,7 @@ export default function Viewport3D() {
     };
     for (const curve of curvesRef.current) drawCurve(curve);
     if (currentCurveRef.current) drawCurve(currentCurveRef.current);
-    drawTextAnnotations(ctx, canvas, useSceneStore.getState().textAnnotations);
+    drawTextAnnotations(ctx, canvas, useSceneStore.getState().textAnnotations, useSceneStore.getState().selectedTextId);
   }, []);
   renderCanvas2DRef.current = renderCanvas2D;
 
@@ -404,9 +439,21 @@ export default function Viewport3D() {
   const handleTextCanvasClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     const s = useSceneStore.getState();
     if (!s.textMode || pendingInput) return;
-    const rect = drawCanvasRef.current!.getBoundingClientRect();
+    const canvas = drawCanvasRef.current!;
+    const rect = canvas.getBoundingClientRect();
     const cssX = e.clientX - rect.left;
     const cssY = e.clientY - rect.top;
+    // Check if click lands on an existing annotation
+    const hit = hitTestAnnotation(cssX, cssY, rect.width, rect.height, s.textAnnotations);
+    if (hit) {
+      s.selectTextAnnotation(hit.id);
+      return;
+    }
+    // Clicking empty space: deselect if something was selected, else open input
+    if (s.selectedTextId) {
+      s.selectTextAnnotation(null);
+      return;
+    }
     setPendingInput({ cssX, cssY, xFrac: cssX / rect.width, yFrac: cssY / rect.height });
   }, [pendingInput]);
 
@@ -780,7 +827,7 @@ export default function Viewport3D() {
       )}
       {textMode && !screenshotMode && !pendingInput && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-amber-600/90 backdrop-blur-sm text-white text-sm px-5 py-2 rounded-lg pointer-events-none z-20 shadow-xl border border-amber-400/30">
-          点击任意位置添加文字标注
+          {selectedTextId ? '已选中标注 — 可在右侧属性面板编辑' : '点击空白处添加文字 · 点击标注选中编辑'}
         </div>
       )}
       {!screenshotMode && (

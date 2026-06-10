@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Search, User, Plus, Trash2 } from 'lucide-react';
+import { Search, User, Plus, Trash2, Type } from 'lucide-react';
 import { useSceneStore, CHARACTER_COLORS } from '../lib/sceneStore';
 
 export default function ScenePanel() {
@@ -8,6 +8,10 @@ export default function ScenePanel() {
 
   const filteredChars = store.characters.filter((c) =>
     c.name.toLowerCase().includes(query.toLowerCase())
+  );
+
+  const filteredTexts = store.textAnnotations.filter((a) =>
+    a.text.toLowerCase().includes(query.toLowerCase())
   );
 
   return (
@@ -29,6 +33,7 @@ export default function ScenePanel() {
       </div>
 
       <div className="flex-1 overflow-y-auto py-1">
+        {/* Characters section */}
         <div className="px-3 py-1.5 flex items-center justify-between group">
           <span className="text-[#4a6a7a] text-[10px] uppercase tracking-wider">角色</span>
           <button
@@ -61,6 +66,37 @@ export default function ScenePanel() {
             </div>
           );
         })}
+
+        {/* Text annotations section */}
+        {store.textAnnotations.length > 0 && (
+          <>
+            <div className="px-3 pt-3 pb-1.5">
+              <span className="text-[#4a6a7a] text-[10px] uppercase tracking-wider">文字标注</span>
+            </div>
+            {filteredTexts.map((ann, i) => (
+              <div
+                key={ann.id}
+                onClick={() => store.selectTextAnnotation(ann.id)}
+                className={`flex items-center gap-2 px-3 py-1.5 cursor-pointer group transition-colors ${
+                  store.selectedTextId === ann.id
+                    ? 'bg-[#2a1e0a] text-amber-200'
+                    : 'text-[#7a9ab4] hover:bg-[#141e28] hover:text-[#aac4d4]'
+                }`}
+              >
+                <Type size={13} className="flex-shrink-0 text-amber-400" />
+                <span className="text-xs flex-1 truncate">
+                  {ann.text || `标注 ${i + 1}`}
+                </span>
+                <button
+                  onClick={(e) => { e.stopPropagation(); store.removeTextAnnotation(ann.id); }}
+                  className="opacity-0 group-hover:opacity-100 text-[#ef4444] hover:text-red-300 transition-opacity"
+                >
+                  <Trash2 size={11} />
+                </button>
+              </div>
+            ))}
+          </>
+        )}
       </div>
 
       <div className="p-3 border-t border-[#1e2d3d]">

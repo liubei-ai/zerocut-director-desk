@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { useSceneStore, CHARACTER_COLORS, getSelectedCharacter } from '../lib/sceneStore';
+import { useSceneStore, CHARACTER_COLORS, getSelectedCharacter, getSelectedTextAnnotation, TextAnnotation } from '../lib/sceneStore';
 import { POSES, PoseId } from '../lib/poses';
-import { User } from 'lucide-react';
+import { User, Type, Trash2 } from 'lucide-react';
 
 function NumInput({
   label, value, onChange, step = 0.1,
@@ -37,30 +37,6 @@ function NumInput({
   );
 }
 
-export default function PropertiesPanel() {
-  const store = useSceneStore();
-  const char = getSelectedCharacter(store);
-
-  if (!char) {
-    return (
-      <div className="w-64 flex-shrink-0 bg-[#111820] border-l border-[#1e2d3d] flex flex-col h-full">
-        <div className="px-3 py-3 border-b border-[#1e2d3d]">
-          <span className="text-[#8babc4] text-sm font-medium">属性</span>
-        </div>
-        <div className="flex-1 flex items-center justify-center text-[#3a5a6a] text-xs">
-          未选中任何对象
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="w-64 flex-shrink-0 bg-[#111820] border-l border-[#1e2d3d] flex flex-col h-full overflow-y-auto">
-      <CharacterProperties char={char} store={store} />
-    </div>
-  );
-}
-
 function Section({ title }: { title: string }) {
   return (
     <div className="px-3 py-2 mt-2 border-b border-[#1e2d3d]">
@@ -92,21 +68,9 @@ function CharacterProperties({ char, store }: { char: ReturnType<typeof getSelec
 
       <Section title="位置" />
       <div className="px-3 py-2 flex flex-col gap-2">
-        <NumInput
-          label="X"
-          value={char.position[0]}
-          onChange={(v) => store.updateCharacter(char.id, { position: [v, char.position[1], char.position[2]] })}
-        />
-        <NumInput
-          label="Y"
-          value={char.position[1]}
-          onChange={(v) => store.updateCharacter(char.id, { position: [char.position[0], v, char.position[2]] })}
-        />
-        <NumInput
-          label="Z"
-          value={char.position[2]}
-          onChange={(v) => store.updateCharacter(char.id, { position: [char.position[0], char.position[1], v] })}
-        />
+        <NumInput label="X" value={char.position[0]} onChange={(v) => store.updateCharacter(char.id, { position: [v, char.position[1], char.position[2]] })} />
+        <NumInput label="Y" value={char.position[1]} onChange={(v) => store.updateCharacter(char.id, { position: [char.position[0], v, char.position[2]] })} />
+        <NumInput label="Z" value={char.position[2]} onChange={(v) => store.updateCharacter(char.id, { position: [char.position[0], char.position[1], v] })} />
       </div>
 
       <Section title="旋转 (度)" />
@@ -118,10 +82,7 @@ function CharacterProperties({ char, store }: { char: ReturnType<typeof getSelec
               <span className="text-[#6a9ab4] text-[10px] tabular-nums">{Math.round(char.rotation[i])}°</span>
             </div>
             <input
-              type="range"
-              min={-180}
-              max={180}
-              step={1}
+              type="range" min={-180} max={180} step={1}
               value={char.rotation[i]}
               onChange={(e) => {
                 const next = [...char.rotation] as [number, number, number];
@@ -170,5 +131,114 @@ function CharacterProperties({ char, store }: { char: ReturnType<typeof getSelec
         </div>
       </div>
     </>
+  );
+}
+
+function TextAnnotationProperties({ ann }: { ann: TextAnnotation }) {
+  const store = useSceneStore();
+  const update = (patch: Partial<TextAnnotation>) => store.updateTextAnnotation(ann.id, patch);
+
+  return (
+    <>
+      <div className="px-3 py-3 border-b border-[#1e2d3d] flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Type size={14} className="text-amber-400" />
+          <span className="text-[#8babc4] text-sm font-medium">文字标注</span>
+        </div>
+        <button
+          onClick={() => store.removeTextAnnotation(ann.id)}
+          title="删除标注"
+          className="w-7 h-7 flex items-center justify-center rounded text-[#ef4444] hover:bg-[#2a1a1a] transition-colors"
+        >
+          <Trash2 size={13} />
+        </button>
+      </div>
+
+      <Section title="内容" />
+      <div className="px-3 py-2">
+        <textarea
+          value={ann.text}
+          onChange={(e) => update({ text: e.target.value })}
+          rows={3}
+          className="w-full bg-[#0d1820] border border-[#1e2d3d] text-[#aac4d4] text-xs px-2 py-1.5 rounded outline-none focus:border-[#2a5a8a] resize-none"
+        />
+      </div>
+
+      <Section title="字号" />
+      <div className="px-3 py-2 flex items-center gap-3">
+        <input
+          type="range" min={10} max={72} step={1}
+          value={ann.fontSize}
+          onChange={(e) => update({ fontSize: parseInt(e.target.value) })}
+          className="flex-1 accent-amber-500"
+        />
+        <span className="text-amber-400 text-xs tabular-nums w-8 text-right">{ann.fontSize}px</span>
+      </div>
+
+      <Section title="文字颜色" />
+      <div className="px-3 py-2 flex items-center gap-3">
+        <input
+          type="color"
+          value={ann.color}
+          onChange={(e) => update({ color: e.target.value })}
+          className="w-8 h-8 rounded cursor-pointer border border-[#2a3a4a] bg-transparent p-0.5"
+        />
+        <span className="text-[#6a9ab4] text-xs font-mono">{ann.color.toUpperCase()}</span>
+        <div className="flex-1 h-5 rounded border border-[#1e2d3d]" style={{ backgroundColor: ann.color }} />
+      </div>
+
+      <Section title="背景" />
+      <div className="px-3 py-2 flex flex-col gap-2.5">
+        <div className="flex items-center gap-3">
+          <span className="text-[#4a6a7a] text-[10px] w-8">颜色</span>
+          <input
+            type="color"
+            value={ann.bgColor}
+            onChange={(e) => update({ bgColor: e.target.value })}
+            className="w-8 h-8 rounded cursor-pointer border border-[#2a3a4a] bg-transparent p-0.5"
+          />
+          <span className="text-[#6a9ab4] text-xs font-mono">{ann.bgColor.toUpperCase()}</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-[#4a6a7a] text-[10px] w-8">透明</span>
+          <input
+            type="range" min={0} max={100} step={5}
+            value={Math.round(ann.bgAlpha * 100)}
+            onChange={(e) => update({ bgAlpha: parseInt(e.target.value) / 100 })}
+            className="flex-1 accent-amber-500"
+          />
+          <span className="text-amber-400 text-xs tabular-nums w-8 text-right">{Math.round(ann.bgAlpha * 100)}%</span>
+        </div>
+        <div
+          className="h-5 rounded border border-[#1e2d3d]"
+          style={{ backgroundColor: ann.bgColor, opacity: ann.bgAlpha }}
+        />
+      </div>
+    </>
+  );
+}
+
+export default function PropertiesPanel() {
+  const store = useSceneStore();
+  const char = getSelectedCharacter(store);
+  const textAnn = getSelectedTextAnnotation(store);
+
+  const hasSelection = char || textAnn;
+
+  return (
+    <div className="w-64 flex-shrink-0 bg-[#111820] border-l border-[#1e2d3d] flex flex-col h-full overflow-y-auto">
+      {!hasSelection && (
+        <>
+          <div className="px-3 py-3 border-b border-[#1e2d3d]">
+            <span className="text-[#8babc4] text-sm font-medium">属性</span>
+          </div>
+          <div className="flex-1 flex items-center justify-center text-[#3a5a6a] text-xs">
+            未选中任何对象
+          </div>
+        </>
+      )}
+      {char && <CharacterProperties char={char} store={store} />}
+      {textAnn && <TextAnnotationProperties ann={textAnn} />}
+    </div>
   );
 }

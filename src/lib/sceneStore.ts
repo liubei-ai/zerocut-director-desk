@@ -36,6 +36,7 @@ export interface TextAnnotation {
 interface SceneStore {
   characters: CharacterState[];
   selectedId: string | null;
+  selectedTextId: string | null;
   addCharacterMode: boolean;
   screenshotMode: boolean;
   backgroundDataUrl: string | null;
@@ -69,14 +70,17 @@ interface SceneStore {
   setTextBgColor: (c: string) => void;
   setTextBgAlpha: (n: number) => void;
   addTextAnnotation: (ann: TextAnnotation) => void;
+  updateTextAnnotation: (id: string, patch: Partial<TextAnnotation>) => void;
   removeTextAnnotation: (id: string) => void;
   clearTextAnnotations: () => void;
+  selectTextAnnotation: (id: string | null) => void;
 }
 
 let charCounter = 0;
 
 export const useSceneStore = create<SceneStore>((set) => ({
   selectedId: null,
+  selectedTextId: null,
   addCharacterMode: false,
   screenshotMode: false,
   backgroundDataUrl: null,
@@ -110,6 +114,7 @@ export const useSceneStore = create<SceneStore>((set) => ({
         },
       ],
       selectedId: id,
+      selectedTextId: null,
       addCharacterMode: false,
     }));
   },
@@ -125,7 +130,7 @@ export const useSceneStore = create<SceneStore>((set) => ({
       characters: s.characters.map((c) => (c.id === id ? { ...c, ...patch } : c)),
     })),
 
-  selectItem: (id) => set({ selectedId: id }),
+  selectItem: (id) => set({ selectedId: id, selectedTextId: null }),
   setAddCharacterMode: (v) => set({ addCharacterMode: v }),
   setScreenshotMode: (v) => set({ screenshotMode: v }),
   setBackgroundImage: (url) => set({ backgroundDataUrl: url }),
@@ -139,11 +144,26 @@ export const useSceneStore = create<SceneStore>((set) => ({
   setTextColor: (c) => set({ textColor: c }),
   setTextBgColor: (c) => set({ textBgColor: c }),
   setTextBgAlpha: (n) => set({ textBgAlpha: n }),
+
   addTextAnnotation: (ann) => set((s) => ({ textAnnotations: [...s.textAnnotations, ann] })),
-  removeTextAnnotation: (id) => set((s) => ({ textAnnotations: s.textAnnotations.filter((a) => a.id !== id) })),
-  clearTextAnnotations: () => set({ textAnnotations: [] }),
+  updateTextAnnotation: (id, patch) =>
+    set((s) => ({
+      textAnnotations: s.textAnnotations.map((a) => (a.id === id ? { ...a, ...patch } : a)),
+    })),
+  removeTextAnnotation: (id) =>
+    set((s) => ({
+      textAnnotations: s.textAnnotations.filter((a) => a.id !== id),
+      selectedTextId: s.selectedTextId === id ? null : s.selectedTextId,
+    })),
+  clearTextAnnotations: () => set({ textAnnotations: [], selectedTextId: null }),
+
+  selectTextAnnotation: (id) => set({ selectedTextId: id, selectedId: null }),
 }));
 
 export function getSelectedCharacter(store: SceneStore) {
   return store.characters.find((c) => c.id === store.selectedId) ?? null;
+}
+
+export function getSelectedTextAnnotation(store: SceneStore) {
+  return store.textAnnotations.find((a) => a.id === store.selectedTextId) ?? null;
 }
