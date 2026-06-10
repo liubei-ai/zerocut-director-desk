@@ -289,6 +289,12 @@ export default function Viewport3D() {
     exportTransparentPng(sceneRef.current, cameraRef.current, modelsRef.current, mountRef.current, selRect, drawCanvasRef.current);
   }, [selRect]);
 
+  const handleExportFull = useCallback(() => {
+    if (!sceneRef.current || !cameraRef.current || !mountRef.current) return;
+    const { clientWidth: w, clientHeight: h } = mountRef.current;
+    exportTransparentPng(sceneRef.current, cameraRef.current, modelsRef.current, mountRef.current, { x: 0, y: 0, w, h }, drawCanvasRef.current);
+  }, []);
+
   // ── 2D drawing helpers ──────────────────────────────────────────────────────
   const renderCanvas2D = useCallback(() => {
     const ctx = drawCtxRef.current;
@@ -693,7 +699,7 @@ export default function Viewport3D() {
           {selState === 'idle' && (
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none">
               <p className="text-white/80 text-sm">拖拽框选导出区域</p>
-              <p className="text-white/40 text-xs mt-1">松开后点击"导出"按钮下载 PNG（透明背景）</p>
+              <p className="text-white/40 text-xs mt-1">或点击右上角"导出全图"一键导出完整画面</p>
             </div>
           )}
 
@@ -747,7 +753,7 @@ export default function Viewport3D() {
                     className="flex items-center gap-1.5 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium rounded shadow-lg transition-colors"
                   >
                     <Download size={12} />
-                    导出透明 PNG
+                    导出选区 PNG
                   </button>
                   <button
                     onClick={() => { setSelState('idle'); setSelRect(null); }}
@@ -761,15 +767,26 @@ export default function Viewport3D() {
             </>
           )}
 
-          {/* Cancel button */}
-          <button
-            className="absolute top-3 right-3 flex items-center gap-1.5 px-3 py-1.5 bg-[#0e161f]/90 hover:bg-[#1a2a3a] text-[#6a9ab4] text-xs rounded border border-[#1e3a5a] transition-colors"
+          {/* Top-right controls */}
+          <div
+            className="absolute top-3 right-3 flex items-center gap-2"
             onMouseDown={(e) => e.stopPropagation()}
-            onClick={() => setScreenshotMode(false)}
           >
-            <X size={12} />
-            退出截图
-          </button>
+            <button
+              onClick={() => { handleExportFull(); setScreenshotMode(false); }}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-700/90 hover:bg-emerald-600 text-white text-xs font-medium rounded border border-emerald-500/40 transition-colors shadow-lg"
+            >
+              <Download size={12} />
+              导出全图
+            </button>
+            <button
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#0e161f]/90 hover:bg-[#1a2a3a] text-[#6a9ab4] text-xs rounded border border-[#1e3a5a] transition-colors"
+              onClick={() => setScreenshotMode(false)}
+            >
+              <X size={12} />
+              退出截图
+            </button>
+          </div>
         </div>
       )}
     </div>

@@ -57,16 +57,7 @@ export const useSceneStore = create<SceneStore>((set) => ({
   curveColor: '#ef4444',
   curveWidth: 4,
   clearCurvesSignal: 0,
-  characters: [
-    {
-      id: 'char-1',
-      name: '角色A',
-      colorId: 'blue',
-      pose: 'stand',
-      position: [0, 0, 0],
-      rotation: [0, 0, 0],
-    },
-  ],
+  characters: [],
 
   addCharacter: (pos) => {
     charCounter++;
