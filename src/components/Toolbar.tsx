@@ -56,6 +56,7 @@ function HelpModal({ onClose }: { onClose: () => void }) {
             <ul className="space-y-1.5 text-[#8babc4]">
               <li>点击工具栏 <strong className="text-white">角色</strong> 按钮，然后在场景地面点击放置新角色</li>
               <li>点击已有角色将其选中，右侧面板可修改姿势、颜色、位置</li>
+              <li><kbd className="bg-[#1a2a3a] border border-[#2a4a6a] rounded px-1.5 py-0.5 text-[11px] text-[#aac4d4]">Ctrl</kbd> <strong className="text-white">+ 拖拽角色</strong> 可在场景中自由移动该角色的位置</li>
               <li>左侧角色列表可重命名或删除角色</li>
             </ul>
           </section>
@@ -110,9 +111,14 @@ function HelpModal({ onClose }: { onClose: () => void }) {
 
 export default function Toolbar() {
   const [active, setActive] = useState<Tool>('select');
-  const [showHelp, setShowHelp] = useState(false);
+  const [showHelp, setShowHelp] = useState(() => !localStorage.getItem('helpSeen'));
   const store = useSceneStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const closeHelp = () => {
+    localStorage.setItem('helpSeen', '1');
+    setShowHelp(false);
+  };
 
   const handleTool = (id: Tool) => {
     setActive(id);
@@ -134,7 +140,7 @@ export default function Toolbar() {
 
   return (
     <>
-      {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
+      {showHelp && <HelpModal onClose={closeHelp} />}
 
       <div className="h-12 flex-shrink-0 bg-[#0e161f] border-t border-[#1e2d3d] flex items-center justify-between px-4">
         {/* Left: tool buttons */}
