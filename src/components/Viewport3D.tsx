@@ -78,12 +78,15 @@ function raycastCharacter(e: MouseEvent, cam: THREE.Camera, renderer: THREE.WebG
 
 // ─── export helper ────────────────────────────────────────────────────────────
 
+interface DrawnCurve { points: { x: number; y: number }[]; color: string; width: number; }
+
 function exportTransparentPng(
   scene: THREE.Scene,
   camera: THREE.PerspectiveCamera,
   models: Map<string, CharacterModel>,
   mountEl: HTMLDivElement,
-  sel: { x: number; y: number; w: number; h: number }
+  sel: { x: number; y: number; w: number; h: number },
+  drawCanvas?: HTMLCanvasElement | null
 ) {
   const hasBackground = scene.background instanceof THREE.Texture;
   const dpr = Math.min(window.devicePixelRatio, 2);
@@ -130,6 +133,10 @@ function exportTransparentPng(
   crop.height = pixH;
   const ctx = crop.getContext('2d')!;
   ctx.drawImage(off.domElement, -pixX, -pixY);
+  // Composite 2D drawing layer on top
+  if (drawCanvas && drawCanvas.width > 0) {
+    ctx.drawImage(drawCanvas, -pixX, -pixY);
+  }
   off.dispose();
 
   crop.toBlob((blob) => {
@@ -219,6 +226,16 @@ export default function Viewport3D() {
   const controlsRef = useRef<OrbitControls | null>(null);
   const [cameraDistance, setCameraDistance] = useState(19.3);
 
+  // 2D drawing canvas
+  const drawCanvasRef = useRef<HTMLCanvasElement>(null);
+  const drawCtxRef = useRef<CanvasRenderingContext2D | null>(null);
+  const curvesRef = useRef<DrawnCurve[]>([]);
+  const currentCurveRef = useRef<DrawnCurve | null>(null);
+  const isDrawingRef = useRef(false);
+  const renderCanvas2DRef = useRef<() => void>(() => {});
+  const drawMode = useSceneStore((s) => s.drawMode);
+  const clearCurvesSignal = useSceneStore((s) => s.clearCurvesSignal);
+
   // Screenshot selection state
   const [selState, setSelState] = useState<'idle' | 'drawing' | 'done'>('idle');
   const selStart = useRef({ x: 0, y: 0 });
@@ -269,8 +286,68 @@ export default function Viewport3D() {
 
   const handleExport = useCallback(() => {
     if (!selRect || !sceneRef.current || !cameraRef.current || !mountRef.current) return;
-    exportTransparentPng(sceneRef.current, cameraRef.current, modelsRef.current, mountRef.current, selRect);
+    exportTransparentPng(sceneRef.current, cameraRef.current, modelsRef.current, mountRef.current, selRect, drawCanvasRef.current);
   }, [selRect]);
+
+  // ── 2D drawing helpers ──────────────────────────────────────────────────────
+  const renderCanvas2D = useCallback(() => {
+    const ctx = drawCtxRef.current;
+    const canvas = drawCanvasRef.current;
+    if (!ctx || !canvas) return;
+    ctx.clearRect(0, 0, canvas.offsetWidth, canvas.offsetHeight);
+    const drawCurve = (curve: DrawnCurve) => {
+      if (curve.points.length < 2) return;
+      ctx.save();
+      ctx.strokeStyle = curve.color;
+      ctx.lineWidth = curve.width;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(curve.points[0].x, curve.points[0].y);
+      for (let i = 1; i < curve.points.length; i++) ctx.lineTo(curve.points[i].x, curve.points[i].y);
+      ctx.stroke();
+      ctx.restore();
+    };
+    for (const curve of curvesRef.current) drawCurve(curve);
+    if (currentCurveRef.current) drawCurve(currentCurveRef.current);
+  }, []);
+  renderCanvas2DRef.current = renderCanvas2D;
+
+  const handleDrawMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    const s = useSceneStore.getState();
+    if (!s.drawMode) return;
+    const rect = drawCanvasRef.current!.getBoundingClientRect();
+    isDrawingRef.current = true;
+    currentCurveRef.current = {
+      points: [{ x: e.clientX - rect.left, y: e.clientY - rect.top }],
+      color: s.curveColor,
+      width: s.curveWidth,
+    };
+  }, []);
+
+  const handleDrawMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!isDrawingRef.current || !currentCurveRef.current) return;
+    const rect = drawCanvasRef.current!.getBoundingClientRect();
+    currentCurveRef.current.points.push({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    renderCanvas2D();
+  }, [renderCanvas2D]);
+
+  const handleDrawMouseUp = useCallback(() => {
+    if (!isDrawingRef.current) return;
+    isDrawingRef.current = false;
+    if (currentCurveRef.current && currentCurveRef.current.points.length > 1) {
+      curvesRef.current.push(currentCurveRef.current);
+    }
+    currentCurveRef.current = null;
+    renderCanvas2D();
+  }, [renderCanvas2D]);
+
+  useEffect(() => {
+    curvesRef.current = [];
+    currentCurveRef.current = null;
+    isDrawingRef.current = false;
+    renderCanvas2D();
+  }, [clearCurvesSignal, renderCanvas2D]);
 
   // ── Three.js init ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -286,13 +363,27 @@ export default function Viewport3D() {
     cameraRef.current = camera;
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    const dpr = Math.min(window.devicePixelRatio, 2);
+    renderer.setPixelRatio(dpr);
     renderer.setSize(mount.clientWidth, mount.clientHeight);
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 0.9;
     mount.appendChild(renderer.domElement);
+
+    // Draw canvas setup
+    const drawCanvas = drawCanvasRef.current!;
+    const initDrawCanvas = () => {
+      drawCanvas.width = mount.clientWidth * dpr;
+      drawCanvas.height = mount.clientHeight * dpr;
+      drawCanvas.style.width = mount.clientWidth + 'px';
+      drawCanvas.style.height = mount.clientHeight + 'px';
+      const ctx2d = drawCanvas.getContext('2d')!;
+      ctx2d.scale(dpr, dpr);
+      drawCtxRef.current = ctx2d;
+    };
+    initDrawCanvas();
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.target.set(0, 1, 0);
@@ -480,9 +571,9 @@ export default function Viewport3D() {
     renderer.domElement.addEventListener('click', onClick);
     renderer.domElement.addEventListener('contextmenu', onContextMenu);
 
-    // Disable orbit when in screenshot mode, but don't re-enable while dragging
+    // Disable orbit when in screenshot or draw mode, but don't re-enable while dragging
     const unsubScreenshot = useSceneStore.subscribe((s) => {
-      if (!dragging) controls.enabled = !s.screenshotMode;
+      if (!dragging) controls.enabled = !s.screenshotMode && !s.drawMode;
     });
 
     // ── Render loop ─────────────────────────────────────────────────────────
@@ -498,6 +589,8 @@ export default function Viewport3D() {
       camera.aspect = mount.clientWidth / mount.clientHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(mount.clientWidth, mount.clientHeight);
+      initDrawCanvas();
+      renderCanvas2DRef.current();
     };
     window.addEventListener('resize', onResize);
 
@@ -529,10 +622,29 @@ export default function Viewport3D() {
 
   return (
     <div ref={mountRef} className="relative flex-1 w-full h-full bg-[#08101a] overflow-hidden">
+      {/* 2D draw canvas — sits above Three.js canvas, below UI overlays */}
+      <canvas
+        ref={drawCanvasRef}
+        className="absolute inset-0 z-10"
+        style={{
+          pointerEvents: drawMode && !screenshotMode ? 'auto' : 'none',
+          cursor: drawMode ? 'crosshair' : 'default',
+        }}
+        onMouseDown={handleDrawMouseDown}
+        onMouseMove={handleDrawMouseMove}
+        onMouseUp={handleDrawMouseUp}
+        onMouseLeave={handleDrawMouseUp}
+      />
+
       {/* Hint labels */}
       {addMode && !screenshotMode && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-blue-600/90 backdrop-blur-sm text-white text-sm px-5 py-2 rounded-lg pointer-events-none z-10 shadow-xl border border-blue-400/30">
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-blue-600/90 backdrop-blur-sm text-white text-sm px-5 py-2 rounded-lg pointer-events-none z-20 shadow-xl border border-blue-400/30">
           点击场景地面放置角色
+        </div>
+      )}
+      {drawMode && !screenshotMode && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-red-600/90 backdrop-blur-sm text-white text-sm px-5 py-2 rounded-lg pointer-events-none z-20 shadow-xl border border-red-400/30">
+          在画布上拖拽绘制曲线
         </div>
       )}
       {!screenshotMode && (
@@ -543,7 +655,7 @@ export default function Viewport3D() {
 
       {/* Zoom control */}
       {!screenshotMode && (
-        <div className="absolute bottom-4 left-4 flex items-center gap-2 bg-[#0d1820]/90 border border-[#1e2d3d] rounded-lg px-3 py-1.5 backdrop-blur-sm z-10">
+        <div className="absolute bottom-4 left-4 flex items-center gap-2 bg-[#0d1820]/90 border border-[#1e2d3d] rounded-lg px-3 py-1.5 backdrop-blur-sm z-20">
           <ZoomOut size={13} className="text-[#4a6a7a] flex-shrink-0" />
           <input
             type="range"

@@ -28,6 +28,10 @@ interface SceneStore {
   addCharacterMode: boolean;
   screenshotMode: boolean;
   backgroundDataUrl: string | null;
+  drawMode: boolean;
+  curveColor: string;
+  curveWidth: number;
+  clearCurvesSignal: number;
 
   addCharacter: (pos: [number, number, number]) => void;
   removeCharacter: (id: string) => void;
@@ -36,6 +40,10 @@ interface SceneStore {
   setAddCharacterMode: (v: boolean) => void;
   setScreenshotMode: (v: boolean) => void;
   setBackgroundImage: (url: string | null) => void;
+  setDrawMode: (v: boolean) => void;
+  setCurveColor: (c: string) => void;
+  setCurveWidth: (w: number) => void;
+  triggerClearCurves: () => void;
 }
 
 let charCounter = 0;
@@ -45,6 +53,10 @@ export const useSceneStore = create<SceneStore>((set) => ({
   addCharacterMode: false,
   screenshotMode: false,
   backgroundDataUrl: null,
+  drawMode: false,
+  curveColor: '#ef4444',
+  curveWidth: 4,
+  clearCurvesSignal: 0,
   characters: [
     {
       id: 'char-1',
@@ -92,6 +104,10 @@ export const useSceneStore = create<SceneStore>((set) => ({
   setAddCharacterMode: (v) => set({ addCharacterMode: v }),
   setScreenshotMode: (v) => set({ screenshotMode: v }),
   setBackgroundImage: (url) => set({ backgroundDataUrl: url }),
+  setDrawMode: (v) => set({ drawMode: v }),
+  setCurveColor: (c) => set({ curveColor: c }),
+  setCurveWidth: (w) => set({ curveWidth: w }),
+  triggerClearCurves: () => set((s) => ({ clearCurvesSignal: s.clearCurvesSignal + 1 })),
 }));
 
 export function getSelectedCharacter(store: SceneStore) {
