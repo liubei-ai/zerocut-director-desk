@@ -22,6 +22,17 @@ export interface CharacterState {
   rotation: [number, number, number];
 }
 
+export interface TextAnnotation {
+  id: string;
+  xFrac: number;
+  yFrac: number;
+  text: string;
+  fontSize: number;
+  color: string;
+  bgColor: string;
+  bgAlpha: number;
+}
+
 interface SceneStore {
   characters: CharacterState[];
   selectedId: string | null;
@@ -33,6 +44,12 @@ interface SceneStore {
   curveColor: string;
   curveWidth: number;
   clearCurvesSignal: number;
+  textMode: boolean;
+  textAnnotations: TextAnnotation[];
+  textFontSize: number;
+  textColor: string;
+  textBgColor: string;
+  textBgAlpha: number;
 
   addCharacter: (pos: [number, number, number]) => void;
   removeCharacter: (id: string) => void;
@@ -46,6 +63,14 @@ interface SceneStore {
   setCurveColor: (c: string) => void;
   setCurveWidth: (w: number) => void;
   triggerClearCurves: () => void;
+  setTextMode: (v: boolean) => void;
+  setTextFontSize: (n: number) => void;
+  setTextColor: (c: string) => void;
+  setTextBgColor: (c: string) => void;
+  setTextBgAlpha: (n: number) => void;
+  addTextAnnotation: (ann: TextAnnotation) => void;
+  removeTextAnnotation: (id: string) => void;
+  clearTextAnnotations: () => void;
 }
 
 let charCounter = 0;
@@ -60,6 +85,12 @@ export const useSceneStore = create<SceneStore>((set) => ({
   curveColor: '#ef4444',
   curveWidth: 4,
   clearCurvesSignal: 0,
+  textMode: false,
+  textAnnotations: [],
+  textFontSize: 18,
+  textColor: '#ffffff',
+  textBgColor: '#000000',
+  textBgAlpha: 0.55,
   characters: [],
 
   addCharacter: (pos) => {
@@ -103,6 +134,14 @@ export const useSceneStore = create<SceneStore>((set) => ({
   setCurveColor: (c) => set({ curveColor: c }),
   setCurveWidth: (w) => set({ curveWidth: w }),
   triggerClearCurves: () => set((s) => ({ clearCurvesSignal: s.clearCurvesSignal + 1, hasCurves: false })),
+  setTextMode: (v) => set({ textMode: v }),
+  setTextFontSize: (n) => set({ textFontSize: n }),
+  setTextColor: (c) => set({ textColor: c }),
+  setTextBgColor: (c) => set({ textBgColor: c }),
+  setTextBgAlpha: (n) => set({ textBgAlpha: n }),
+  addTextAnnotation: (ann) => set((s) => ({ textAnnotations: [...s.textAnnotations, ann] })),
+  removeTextAnnotation: (id) => set((s) => ({ textAnnotations: s.textAnnotations.filter((a) => a.id !== id) })),
+  clearTextAnnotations: () => set({ textAnnotations: [] }),
 }));
 
 export function getSelectedCharacter(store: SceneStore) {

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { useSceneStore, CHARACTER_COLORS } from '../lib/sceneStore';
+import { useSceneStore, CHARACTER_COLORS, TextAnnotation } from '../lib/sceneStore';
 import { createCharacterModel, applyPose, setCharacterColor, CharacterModel } from '../lib/humanoid';
 import { Download, X, ZoomIn, ZoomOut } from 'lucide-react';
 
@@ -110,19 +110,17 @@ function exportTransparentPng(
   for (const child of scene.children) {
     if (child instanceof THREE.Light) continue;
     if (charRoots.has(child as THREE.Group)) continue;
-    if (child.userData.nameLabel) continue; // keep name labels in export
+    if (child.userData.nameLabel) continue;
     toRestore.push({ obj: child, vis: child.visible });
     child.visible = false;
   }
 
   off.render(scene, camera);
 
-  // Restore scene
   scene.background = savedBg;
   scene.fog = savedFog;
   for (const { obj, vis } of toRestore) obj.visible = vis;
 
-  // Crop selection to a 2D canvas
   const pixX = Math.round(sel.x * dpr);
   const pixY = Math.round(sel.y * dpr);
   const pixW = Math.round(sel.w * dpr);
@@ -133,7 +131,6 @@ function exportTransparentPng(
   crop.height = pixH;
   const ctx = crop.getContext('2d')!;
   ctx.drawImage(off.domElement, -pixX, -pixY);
-  // Composite 2D drawing layer on top
   if (drawCanvas && drawCanvas.width > 0) {
     ctx.drawImage(drawCanvas, -pixX, -pixY);
   }
@@ -212,13 +209,55 @@ function refreshNameSprite(sprite: THREE.Sprite, name: string, colorHex: string)
   mat.needsUpdate = true;
 }
 
+// ─── text annotation rendering ────────────────────────────────────────────────
+
+function hexToRgb(hex: string): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `${r},${g},${b}`;
+}
+
+function drawTextAnnotations(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, annotations: TextAnnotation[]) {
+  for (const ann of annotations) {
+    const x = ann.xFrac * canvas.offsetWidth;
+    const y = ann.yFrac * canvas.offsetHeight;
+    ctx.save();
+    ctx.font = `bold ${ann.fontSize}px system-ui, "PingFang SC", "Microsoft YaHei", sans-serif`;
+    ctx.textBaseline = 'top';
+    const metrics = ctx.measureText(ann.text);
+    const textW = metrics.width;
+    const textH = ann.fontSize * 1.3;
+    const pad = 6;
+    ctx.fillStyle = `rgba(${hexToRgb(ann.bgColor)},${ann.bgAlpha})`;
+    const rx = 4;
+    const bx = x - pad, by = y - pad, bw = textW + pad * 2, bh = textH + pad * 2;
+    ctx.beginPath();
+    ctx.moveTo(bx + rx, by);
+    ctx.lineTo(bx + bw - rx, by);
+    ctx.arcTo(bx + bw, by, bx + bw, by + rx, rx);
+    ctx.lineTo(bx + bw, by + bh - rx);
+    ctx.arcTo(bx + bw, by + bh, bx + bw - rx, by + bh, rx);
+    ctx.lineTo(bx + rx, by + bh);
+    ctx.arcTo(bx, by + bh, bx, by + bh - rx, rx);
+    ctx.lineTo(bx, by + rx);
+    ctx.arcTo(bx, by, bx + rx, by, rx);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = ann.color;
+    ctx.fillText(ann.text, x, y);
+    ctx.restore();
+  }
+}
+
 // ─── component ────────────────────────────────────────────────────────────────
+
+interface PendingInput { xFrac: number; yFrac: number; cssX: number; cssY: number; }
 
 export default function Viewport3D() {
   const mountRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
 
-  // Refs to share Three.js state with export/drag handlers outside useEffect
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const modelsRef = useRef<Map<string, CharacterModel>>(new Map());
@@ -235,6 +274,13 @@ export default function Viewport3D() {
   const renderCanvas2DRef = useRef<() => void>(() => {});
   const drawMode = useSceneStore((s) => s.drawMode);
   const clearCurvesSignal = useSceneStore((s) => s.clearCurvesSignal);
+  const textMode = useSceneStore((s) => s.textMode);
+  const textAnnotations = useSceneStore((s) => s.textAnnotations);
+  const removeTextAnnotation = useSceneStore((s) => s.removeTextAnnotation);
+
+  // Pending text input state
+  const [pendingInput, setPendingInput] = useState<PendingInput | null>(null);
+  const pendingInputRef = useRef<HTMLInputElement>(null);
 
   // Screenshot selection state
   const [selState, setSelState] = useState<'idle' | 'drawing' | 'done'>('idle');
@@ -245,13 +291,17 @@ export default function Viewport3D() {
   const setScreenshotMode = useSceneStore((s) => s.setScreenshotMode);
   const addMode = useSceneStore((s) => s.addCharacterMode);
 
-  // Reset selection when leaving screenshot mode
   useEffect(() => {
     if (!screenshotMode) {
       setSelState('idle');
       setSelRect(null);
     }
   }, [screenshotMode]);
+
+  // Re-render canvas when text annotations change
+  useEffect(() => {
+    renderCanvas2DRef.current();
+  }, [textAnnotations]);
 
   // ── Overlay mouse handlers ──────────────────────────────────────────────────
   const onOverlayMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
@@ -316,6 +366,7 @@ export default function Viewport3D() {
     };
     for (const curve of curvesRef.current) drawCurve(curve);
     if (currentCurveRef.current) drawCurve(currentCurveRef.current);
+    drawTextAnnotations(ctx, canvas, useSceneStore.getState().textAnnotations);
   }, []);
   renderCanvas2DRef.current = renderCanvas2D;
 
@@ -349,6 +400,34 @@ export default function Viewport3D() {
     renderCanvas2D();
   }, [renderCanvas2D]);
 
+  // ── Text mode click handler ─────────────────────────────────────────────────
+  const handleTextCanvasClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    const s = useSceneStore.getState();
+    if (!s.textMode || pendingInput) return;
+    const rect = drawCanvasRef.current!.getBoundingClientRect();
+    const cssX = e.clientX - rect.left;
+    const cssY = e.clientY - rect.top;
+    setPendingInput({ cssX, cssY, xFrac: cssX / rect.width, yFrac: cssY / rect.height });
+  }, [pendingInput]);
+
+  const confirmPendingText = useCallback((value: string) => {
+    const trimmed = value.trim();
+    if (trimmed && pendingInput) {
+      const s = useSceneStore.getState();
+      s.addTextAnnotation({
+        id: `text-${Date.now()}`,
+        xFrac: pendingInput.xFrac,
+        yFrac: pendingInput.yFrac,
+        text: trimmed,
+        fontSize: s.textFontSize,
+        color: s.textColor,
+        bgColor: s.textBgColor,
+        bgAlpha: s.textBgAlpha,
+      });
+    }
+    setPendingInput(null);
+  }, [pendingInput]);
+
   useEffect(() => {
     curvesRef.current = [];
     currentCurveRef.current = null;
@@ -379,7 +458,6 @@ export default function Viewport3D() {
     renderer.toneMappingExposure = 0.9;
     mount.appendChild(renderer.domElement);
 
-    // Draw canvas setup
     const drawCanvas = drawCanvasRef.current!;
     const initDrawCanvas = () => {
       drawCanvas.width = mount.clientWidth * dpr;
@@ -407,7 +485,6 @@ export default function Viewport3D() {
     controls.addEventListener('change', syncZoom);
     syncZoom();
 
-    // ── Background image sync ───────────────────────────────────────────────
     let lastBgUrl: string | null = null;
     const applyBackground = (url: string | null) => {
       if (url === lastBgUrl) return;
@@ -441,7 +518,6 @@ export default function Viewport3D() {
     floorMesh.rotation.x = -Math.PI / 2;
     scene.add(floorMesh);
 
-    // ── Character sync ──────────────────────────────────────────────────────
     const models = modelsRef.current;
     const nameSprites = nameSpritesRef.current;
 
@@ -456,7 +532,6 @@ export default function Viewport3D() {
         }
       }
 
-      // Remove label sprites for deleted characters
       for (const [id, entry] of nameSprites) {
         if (!currentIds.has(id)) {
           scene.remove(entry.sprite);
@@ -485,7 +560,6 @@ export default function Viewport3D() {
         model.bodyMat.emissive?.set(hl);
         model.accentMat.emissive?.set(hl);
 
-        // Name label sprite (lives in scene-space so it never inherits character rotation)
         const existing = nameSprites.get(char.id);
         if (!existing) {
           const sprite = createNameSprite(char.name, colorHex);
@@ -510,7 +584,6 @@ export default function Viewport3D() {
     syncCharacters();
     const unsubscribe = useSceneStore.subscribe(syncCharacters);
 
-    // ── Drag state ──────────────────────────────────────────────────────────
     let dragging = false;
     let dragCharId: string | null = null;
     let dragOffsetX = 0;
@@ -578,12 +651,10 @@ export default function Viewport3D() {
     renderer.domElement.addEventListener('click', onClick);
     renderer.domElement.addEventListener('contextmenu', onContextMenu);
 
-    // Disable orbit when in screenshot or draw mode, but don't re-enable while dragging
     const unsubScreenshot = useSceneStore.subscribe((s) => {
-      if (!dragging) controls.enabled = !s.screenshotMode && !s.drawMode;
+      if (!dragging) controls.enabled = !s.screenshotMode && !s.drawMode && !s.textMode;
     });
 
-    // ── Render loop ─────────────────────────────────────────────────────────
     let raf = 0;
     const animate = () => {
       raf = requestAnimationFrame(animate);
@@ -617,7 +688,6 @@ export default function Viewport3D() {
       window.removeEventListener('resize', onResize);
       renderer.dispose();
       mount.removeChild(renderer.domElement);
-      // Clear models so the next mount (React Strict Mode double-invoke) starts fresh
       models.clear();
       for (const entry of nameSprites.values()) {
         (entry.sprite.material as THREE.SpriteMaterial).map?.dispose();
@@ -627,21 +697,75 @@ export default function Viewport3D() {
     };
   }, []);
 
+  const canvasActive = (drawMode || textMode) && !screenshotMode;
+
   return (
     <div ref={mountRef} className="relative flex-1 w-full h-full bg-[#08101a] overflow-hidden">
-      {/* 2D draw canvas — sits above Three.js canvas, below UI overlays */}
+      {/* 2D draw canvas */}
       <canvas
         ref={drawCanvasRef}
         className="absolute inset-0 z-10"
         style={{
-          pointerEvents: drawMode && !screenshotMode ? 'auto' : 'none',
-          cursor: drawMode ? 'crosshair' : 'default',
+          pointerEvents: canvasActive ? 'auto' : 'none',
+          cursor: drawMode ? 'crosshair' : textMode ? 'text' : 'default',
         }}
         onMouseDown={handleDrawMouseDown}
         onMouseMove={handleDrawMouseMove}
         onMouseUp={handleDrawMouseUp}
         onMouseLeave={handleDrawMouseUp}
+        onClick={handleTextCanvasClick}
       />
+
+      {/* Text annotation delete buttons — shown in text mode */}
+      {textMode && !screenshotMode && (
+        <div className="absolute inset-0 z-20 pointer-events-none">
+          {textAnnotations.map((ann) => (
+            <button
+              key={ann.id}
+              title="删除此标注"
+              className="absolute pointer-events-auto w-5 h-5 flex items-center justify-center rounded-full bg-red-600 hover:bg-red-500 text-white shadow-md transition-colors"
+              style={{
+                left: `${ann.xFrac * 100}%`,
+                top: `${ann.yFrac * 100}%`,
+                transform: 'translate(-100%, -100%)',
+              }}
+              onClick={() => removeTextAnnotation(ann.id)}
+            >
+              <X size={10} />
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Inline text input */}
+      {pendingInput && (
+        <div
+          className="absolute z-30"
+          style={{
+            left: `${pendingInput.xFrac * 100}%`,
+            top: `${pendingInput.yFrac * 100}%`,
+          }}
+        >
+          <input
+            ref={pendingInputRef}
+            autoFocus
+            type="text"
+            placeholder="输入文字…"
+            className="outline-none rounded px-2 py-1 min-w-[120px] max-w-[320px]"
+            style={{
+              fontSize: useSceneStore.getState().textFontSize,
+              color: useSceneStore.getState().textColor,
+              backgroundColor: `rgba(${hexToRgb(useSceneStore.getState().textBgColor)},${useSceneStore.getState().textBgAlpha})`,
+              border: '1.5px dashed rgba(255,255,255,0.5)',
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') confirmPendingText(e.currentTarget.value);
+              if (e.key === 'Escape') setPendingInput(null);
+            }}
+            onBlur={(e) => confirmPendingText(e.target.value)}
+          />
+        </div>
+      )}
 
       {/* Hint labels */}
       {addMode && !screenshotMode && (
@@ -652,6 +776,11 @@ export default function Viewport3D() {
       {drawMode && !screenshotMode && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-red-600/90 backdrop-blur-sm text-white text-sm px-5 py-2 rounded-lg pointer-events-none z-20 shadow-xl border border-red-400/30">
           在画布上拖拽绘制曲线
+        </div>
+      )}
+      {textMode && !screenshotMode && !pendingInput && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-amber-600/90 backdrop-blur-sm text-white text-sm px-5 py-2 rounded-lg pointer-events-none z-20 shadow-xl border border-amber-400/30">
+          点击任意位置添加文字标注
         </div>
       )}
       {!screenshotMode && (
@@ -696,7 +825,6 @@ export default function Viewport3D() {
           onMouseMove={onOverlayMouseMove}
           onMouseUp={onOverlayMouseUp}
         >
-          {/* Instruction */}
           {selState === 'idle' && (
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none">
               <p className="text-white/80 text-sm">拖拽框选导出区域</p>
@@ -704,19 +832,13 @@ export default function Viewport3D() {
             </div>
           )}
 
-          {/* Selection rect */}
           {selRect && selRect.w > 2 && selRect.h > 2 && (
             <>
-              {/* Dim mask: top */}
               <div className="absolute left-0 right-0 top-0" style={{ height: selRect.y, background: 'rgba(0,0,0,0.3)' }} />
-              {/* Dim mask: bottom */}
               <div className="absolute left-0 right-0" style={{ top: selRect.y + selRect.h, bottom: 0, background: 'rgba(0,0,0,0.3)' }} />
-              {/* Dim mask: left */}
               <div className="absolute" style={{ left: 0, top: selRect.y, width: selRect.x, height: selRect.h, background: 'rgba(0,0,0,0.3)' }} />
-              {/* Dim mask: right */}
               <div className="absolute" style={{ left: selRect.x + selRect.w, right: 0, top: selRect.y, height: selRect.h, background: 'rgba(0,0,0,0.3)' }} />
 
-              {/* Selection border */}
               <div
                 className="absolute"
                 style={{
@@ -730,7 +852,6 @@ export default function Viewport3D() {
                 }}
               />
 
-              {/* Corner size label */}
               <div
                 className="absolute text-[10px] text-white/60 pointer-events-none"
                 style={{ left: selRect.x + 4, top: selRect.y + 4 }}
@@ -738,7 +859,6 @@ export default function Viewport3D() {
                 {Math.round(selRect.w)} × {Math.round(selRect.h)}
               </div>
 
-              {/* Export button (shown after drawing done) */}
               {selState === 'done' && (
                 <div
                   className="absolute flex gap-2"
@@ -768,7 +888,6 @@ export default function Viewport3D() {
             </>
           )}
 
-          {/* Top-right controls */}
           <div
             className="absolute top-3 right-3 flex items-center gap-2"
             onMouseDown={(e) => e.stopPropagation()}
