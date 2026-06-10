@@ -218,6 +218,7 @@ export function applyPose(model: CharacterModel, poseId: PoseId) {
   if (!pose) return;
   const r = pose.rotations;
   const j = model.joints;
+  j.torso.rotation.copy(r.torso);
   j.head.rotation.copy(r.head);
   j.leftUpperArm.rotation.copy(r.leftUpperArm);
   j.rightUpperArm.rotation.copy(r.rightUpperArm);
